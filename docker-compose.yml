@@ -1,0 +1,73 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: club_lecture_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-club_lecture}
+      MYSQL_USER: ${DB_USER:-club}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-club}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      # Tous les .sql de ce dossier sont exécutés à la 1re création de la base
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ./backend
+    container_name: club_lecture_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-club_lecture}
+      DB_USER: ${DB_USER:-club}
+      DB_PASSWORD: ${DB_PASSWORD:-club}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    ports:
+      - "8080:80"
+    volumes:
+      - ./backend:/var/www/html
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: club_lecture_pma
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    ports:
+      - "8081:80"
+
+  # Front React Native (Expo web). Désactivé par défaut :
+  #   docker compose --profile front up
+  frontend:
+    profiles: ["front"]
+    image: node:20-alpine
+    container_name: club_lecture_front
+    working_dir: /app
+    environment:
+      EXPO_PUBLIC_API_URL: http://localhost:8080
+      CI: "false"
+    ports:
+      - "19006:19006"
+      - "8082:8082"
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npx expo start --web --port 19006"
+
+volumes:
+  db_data:
